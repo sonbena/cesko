@@ -1,0 +1,81 @@
+<!-- data-type="region" + data-parent makes the map click ask "region or overlord?".
+     Not counted in world totals (so the parent's population should include it).
+     Any mode value the region lacks (government, ideology, ethnicity, religion...) falls back to the parent.
+     Set only what differs. -->
+<article data-type="region"
+         data-name="Federated Cliques of Sichuan"
+         data-parent="281998"
+         data-color="251a99"
+         data-population="50400000"
+         data-highlight="#ffffff"
+         data-capital="Chengdu"
+         data-government="Republic"
+         data-ideology="Federalism"
+         data-religion="Taoism"
+         data-list="true">
+
+<div class="heading">
+  <img id="flag" src="/map/graphics/flags/sichuan.png" style="height:32px">
+
+<div class="flexa">
+    <button id="information">Information</button>
+    <button id="cabinet">Cabinet</button>
+</div>
+
+  <h1>Federated Cliques of Sichuan</h1>
+</div>
+  <p class="region">East Asia · Region of <a data-link="281998">Republic of China</a></p>
+
+  <dl data-infobox></dl>
+
+  <h3>Ethnic groups</h3>
+  <!-- percentages are of THIS region's population (50.4M) -->
+  <ul class="ethnicities">
+    <li data-pct="85" data-color="#e07a5f">Han</li>
+    <li data-pct="10" data-color="#3d85c6">Hui</li>
+    <li data-pct="5"  data-color="#81b29a">Tibetan</li>
+  </ul>
+
+  <h3>Religions</h3>
+  <ul class="religions">
+    <li data-pct="45" data-color="#e0b13d">Buddhism</li>
+    <li data-pct="30" data-color="8e44ad">Taoism</li>
+    <li data-pct="25" data-color="#999999">Irreligious</li>
+  </ul>
+  <style>
+    #flag {
+        width:100%;
+        height:100% !important;
+        border:5px double black;
+    }
+    #s-body {
+        padding:10px;
+    }
+    .heading {
+        display:flex;
+        gap:10px;
+        margin-right:25px;
+            flex-wrap: wrap;
+    text-align: -webkit-center;
+    }
+    #close {
+            right: 2px;
+    top: 2px;
+    }
+    #close:hover {
+        filter:invert(1);
+    }
+    .flexa {
+        display:flex;
+        width:100%;
+        display:block;
+        gap:5px;
+    }
+    .flexa button {
+        flex:1;
+        width:max-content;
+        font-size:inherit;
+        font-family:inherit;
+    }
+</style>
+</article>

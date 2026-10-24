@@ -1,0 +1,856 @@
+<!DOCTYPE html>
+<html lang="en"><head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<link rel="stylesheet" type="text/css" href="/map/graphics/style/style.css">  
+<title>World Map</title>
+<style>
+* { box-sizing: border-box; }
+
+html, body { margin: 0; height: 100%; overflow: hidden; background: #fff; color: #000; font: 15px/1.5 Georgia, serif; }
+
+#viewport { position: absolute; inset: 0; cursor: grab; touch-action: none; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; }
+#viewport.dragging { cursor: grabbing; }
+
+#world { position: absolute; left: 0; top: 0; transform-origin: 0 0; }
+#world canvas, #world img { position: absolute; left: 0; top: 0; image-rendering: pixelated; }
+#world img { pointer-events: none; }
+
+/* Labels */
+#labels { position: absolute; left: 0; top: 0; width: 0; height: 0; }
+.label { position: absolute; left: 0; top: 0; width: max-content; max-width: 160px; text-align: center; line-height: 1.15; font-size: clamp(11px, 1.3vw, 14px); color: #000; background: #fff; border: 1px solid #000; pointer-events: none; }
+.label.link { pointer-events: auto; cursor: pointer; font-weight: bold; }
+.label.link:hover { text-decoration: underline; }
+.label.sel { background: #000; color: #fff; border: 1px solid #000; }
+.label.hide { visibility: hidden; pointer-events: none; }
+
+/* Coordinates */
+#coords { position: fixed; left: 0; top: 0; z-index: 4; pointer-events: none; font: 12px/1 monospace; background: #fff; color: #000; border: 1px solid #000; }
+#coords[hidden] { display: none; }
+
+/* Panels */
+#sidebar, #panel { position: absolute; background: #fff; color: #000; overflow: auto; border: 1px solid #000; }
+#sidebar { left: 0; top: 0; bottom: 0; width: 340px; z-index: 5; transform: translateX(-100%); }
+#sidebar.open { transform: none; }
+#panel { right: 0; top: 0; bottom: 0; width: 300px; z-index: 6; }
+#panelBar { display: none; }
+#panelBody { border-top: 1px solid #000; }
+
+#close { position: absolute; right: 12px; top: 10px; background: #fff; border: 1px solid #000; color: #000; font-size: 24px; cursor: pointer; }
+
+h1 { margin: 0 0 4px; font-size: 26px; }
+h2 { margin: 0; font-size: 20px; }
+h3 { margin: 22px 0 8px; font-size: 13px; text-transform: uppercase; }
+
+.muted, .region { color: #555; margin: 0; }
+.big { font-size: 30px; line-height: 1.1; }
+
+#s-body dl { display: grid; grid-template-columns: 110px 1fr; gap: 8px; margin: 16px 0; }
+#s-body dd { margin: 0; }
+#s-body ul, #w-list { list-style: none; margin: 0; padding: 0; }
+#s-body img { max-width: 100%; }
+
+a.xlink { color: #000; text-decoration: underline; cursor: pointer; display: inline-flex; align-items: center; gap: 6px; }
+a.xlink.dead { color: #777; pointer-events: none; }
+img.flag { height: .9em; width: auto; max-width: 1.6em; border: 1px solid #000; }
+
+.pie svg { display: block; width: min(100%, 170px); margin: 8px auto 12px; }
+.legend { list-style: none; margin: 0; padding: 0; font-size: 13px; }
+.legend li { display: flex; align-items: center; gap: 8px; }
+.legend i { width: 11px; height: 11px; border: 1px solid #000; flex: none; }
+.legend span { flex: 1; }
+.legend b { font-weight: normal; color: #555; }
+
+#search { display: block; width: 100%; margin: 0 0 8px; padding: 4px 6px; background: #fff; color: #000; border: 1px solid #000; font: 14px Georgia, serif; }
+#w-list li { border-bottom: 1px solid #000; }
+#w-list li[hidden] { display: none; }
+
+#status { position: absolute; left: 12px; bottom: 10px; z-index: 1; font-size: 13px; color: #000; pointer-events: none; }
+
+/* Mobile */
+@media (max-width: 800px) {
+  #sidebar { top: auto; left: 0; right: 0; bottom: 46px; width: auto; height: 50vh; transform: translateY(calc(100% + 46px)); }
+  #sidebar.open { transform: none; }
+  #panel { top: auto; left: 0; right: 0; width: auto; height: 46px; border-top: 1px solid #000; overflow: hidden; }
+  #panel.expanded { height: 55vh; overflow: auto; }
+  #panelBar { display: flex; align-items: center; justify-content: space-between; width: 100%; height: 46px; background: #fff; border: 1px solid #000; color: #000; font: inherit; cursor: pointer; position: sticky; top: 0; }
+  #status { display: none; }
+}
+
+/* Modes and legend */
+#modes { position: absolute; top: 12px; right: 312px; z-index: 4; width: 210px; font: 13px/1.3 Georgia, serif; }
+#modeSel, #subSel { width: 100%; background: #fff; color: #000; border: 1px solid #000; font: inherit; }
+#subSel { margin-top: 6px; }
+#subSel[hidden] { display: none; }
+#legend { margin-top: 6px; background: #fff; color: #000; border: 1px solid #000; }
+#legend:empty { display: none; }
+.lg-bar { height: 10px; border: 1px solid #000; margin-bottom: 4px; }
+.lg-row { display: flex; justify-content: space-between; color: #000; }
+.lg-cat { display: flex; align-items: center; gap: 8px; }
+.lg-cat i { width: 11px; height: 11px; border: 1px solid #000; flex: none; }
+@media (max-width: 800px) { #modes { right: 12px; } }
+
+/* Right panel: closable on desktop (on mobile it already collapses to its bottom bar) */
+#panelClose, #panelOpen { background: #fff; border: 1px solid #000; color: #000; cursor: pointer; }
+#panelClose { position: absolute; right: 12px; top: 10px; font-size: 24px; }
+#panelOpen { display: none; position: absolute; right: 12px; top: 12px; z-index: 6; padding: 4px 10px; font: 13px Georgia, serif; }
+@media (min-width: 801px) {
+  body.panel-closed #panel { transform: translateX(100%); }
+  body.panel-closed #panelOpen { display: block; }
+  body.panel-closed #modes { right: 110px; }
+}
+@media (max-width: 800px) { #panelClose { display: none; } }
+</style>
+</head>
+<body>
+<div id="viewport" tabindex="0">
+  <div id="world">
+    <canvas id="fill"></canvas>
+    <canvas id="highlight"></canvas>
+    <canvas id="hover"></canvas>
+    <img id="borders" src="/img/borders.png" alt="">
+  </div>
+  <div id="labels"></div>
+</div>
+<div id="modes"><select id="modeSel" aria-label="Map mode"></select><select id="subSel" aria-label="Option" hidden></select><div id="legend"></div></div>
+<div id="coords" hidden=""></div>
+
+<aside id="sidebar" aria-live="polite">
+  <button id="close" aria-label="Close sidebar">×</button>
+  <div id="s-body"></div>
+</aside>
+
+<aside id="panel">
+  <button id="panelClose" aria-label="Close panel">×</button>
+  <button id="panelBar" aria-expanded="false"><span id="barText">World · 0</span><span id="barArrow">▲</span></button>
+  <div id="panelBody">
+    <h2>World</h2>
+    <div class="big" id="w-pop">0</div>
+    <p class="muted">total population</p>
+    <h3>Largest ethnic groups</h3>
+    <div id="w-pie"><div class="pie"><p class="muted">No population data.</p></div></div>
+    <h3>Countries</h3>
+    <input id="search" type="search" placeholder="Search countries…" aria-label="Search countries" autocomplete="off">
+    <ul id="w-list"></ul>
+  </div>
+</aside>
+
+<button id="panelOpen" aria-label="Open panel">◀ World</button>
+
+<div id="status">Loading…</div>
+
+<script>
+/* =====================  CONFIG (edit these)  ===================== */
+const FILL_SRC = "/img/fill.png";
+const SIDEBAR_DIR = "/sidebars/";
+// file names (without .html) in SIDEBAR_DIR. Every one of these is fetched and parsed on load.
+const SIDEBARS = [
+"281998", // republic of china
+"251a99", // federated cliques of sichuan
+"281997", // macau
+
+// europe
+"101166", // france
+"league" // league of nations
+];
+
+// Labels: x/y are pixel coordinates on the map image.
+// open: id of a sidebar to open on click (optional). prio: higher wins when labels collide. size: font multiplier.
+const LABELS = [
+  { text: "Republic of China", x: 3000, y: 617, open: "281998", prio: 10 },
+  { text: "Federated Cliques of Sichuan",   x: 2888, y: 607, open: "251a99", prio: 2 },
+  { text: "Shandong",   x: 3000, y: 538, open: "281799", prio: 2 },
+  { text: "Fengtian",   x: 3004, y: 426, open: "271799", prio: 3 },
+  { text: "Sinkiang",   x: 2665, y: 481, open: "231a96", prio: 3 },
+  { text: "Guangdong",   x: 3004, y: 687, open: "2a1799", prio: 3 },
+  { text: "Guangxi",   x: 2950, y: 692, open: "2a1799", prio: 3 },
+  { text: "Ma Qinghai",   x: 2795, y: 540, open: "261796", prio: 3 },
+  { text: "Ma Gansu",   x: 2805, y: 485, open: "291897", prio: 3 },
+  { text: "Ma Ningxia",   x: 2879, y: 498, open: "291899", prio: 3 },
+  { text: "Shanxi",   x: 2922, y: 503, open: "281699", prio: 3 },
+  { text: "Yunnan",   x: 2869, y: 680, open: "251897", prio: 3 },
+  { text: "Kham",   x: 2802, y: 602, open: "231a97", prio: 3 },
+  { text: "Macau",   x: 2995, y: 706, open: "281997", prio: 1 },
+  { text: "Hong Kong",   x: 3003, y: 702, open: "281996", prio: 2 },
+  { text: "Tibet",   x: 2696, y: 588, open: "c9c9c9", prio: 3 },
+  { text: "Mongolia",   x: 2808, y: 410, open: "eb5d70", prio: 4 },
+
+  { text: "Korea",   x: 3089, y: 519, open: "fdc9ee", prio: 4 },
+  { text: "Taiwan",   x: 3074, y: 685, open: "fec9ee", prio: 2 },
+
+  { text: "Burma",   x: 2822, y: 722, open: "001776", prio: 4 },
+
+  { text: "Vietnam",   x: 2942, y: 774, open: "vietnam", prio: 3 },
+  { text: "Tonkin",   x: 2915, y: 712, open: "a61634", prio: 2 },
+  { text: "Annam",   x: 2956, y: 784, open: "a81634", prio: 2 },
+  { text: "Cochinchina",   x: 2940, y: 849, open: "a71634", prio: 2 },
+
+
+{ text: "League of Nations",   x: 1882,  y: 417, open: "league",     prio: 3 },
+
+{ text: "United States of America",   x: 814, y: 512, open: "483665", prio: 3 },
+{ text: "Canada",   x: 847, y: 304, open: "421523", prio: 3 },
+{ text: "Mexico",   x: 764, y: 695, open: "546f4d", prio: 3 },
+  { text: "Atlantic Ocean",         x: 1386,  y: 646 },
+  { text: "Indian Ocean",         x: 2683,  y: 1117 },
+  { text: "Pacific Ocean",         x: 3455,  y: 678 },
+  { text: "Pacific Ocean",         x: 259,  y: 1098 },
+  { text: "Arctic Ocean",         x: 1834,  y: 87 },
+];
+
+// ---- COLORS (defined here once, not in the sidebars) ----
+// Ethnic group colors (pie charts + the "Largest ethnic group" map mode). Name must match the text of the <li>.
+// Any group you don't list gets an automatic color, so you only need to add the ones you care about.
+const ETHNICITY_COLORS = {
+  'Han Chinese': '#c0392b',
+  'Tibetan':     '#e0b13d',
+  'Mongol':      '#3d85c6',
+  'French':      '#2c5aa0',
+};
+// Religion colors (Religion map mode). Name must match data-religion in the sidebars. Unlisted ones get an automatic color.
+const RELIGION_COLORS = {
+  'Christianity': '#3d85c6',
+  'Islam':        '#2e8b57',
+  'Judaism':      '#5b6fc7',
+  'Hinduism':     '#e8742c',
+  'Buddhism':     '#e0b13d',
+  'Sikhism':      '#c27ba0',
+  'Folk religion':'#8e6b3d',
+  'Irreligion':   '#888888',
+};
+
+// How dark a shape gets while the mouse is over it (0 = not at all, 1 = black).
+const HOVER_DARKEN = 0.18;
+
+// Infobox table, built automatically from each article's data-* attributes.
+// Format: ['Label shown', 'attribute name'].   data-capital="Exampleton"  ->  Capital: Exampleton
+// Attribute names with dashes become camelCase:  data-head-of-state  ->  'headOfState'
+// 'population', 'worldshare', 'gdp' and 'religion' are handled for you. Rows that have no value are skipped.
+// Population and GDP of a country automatically include its regions.
+const INFOBOX = [
+  ['Capital', 'capital'],
+  ['Government', 'government'],
+  ['Ideology', 'ideology'],
+  ['Religion', 'religion'],
+  ['Population', 'population'],
+  ['World share', 'worldshare'],
+  ['GDP', 'gdp'],
+];
+
+// Map modes: recolor the fill by a value per country. value(rec) returns a number (numeric:true -> gradient)
+// or a string (-> categories). Regions fall back to their parent country when they have no value of their own.
+// Sidebar root attributes are available as r.attrs, e.g. data-government="Republic" -> r.attrs.government.
+// Optional per mode: colors {category:'#hex'}, colorOf(category), ramp ['#low',...,'#high'], log, format(n).
+// clickOpen(rec): if it returns a sidebar id, clicking a country in this mode opens that sidebar (used by Factions).
+const MODES = [
+  { id: 'political',  label: 'Political' },
+  { id: 'population', label: 'Population', value: r => r.total || null, numeric: true, log: true, ramp: ['#e8f1f8', '#6baed6', '#08306b'] },
+  { id: 'gdp',        label: 'GDP', value: r => r.gdpTotal || null, numeric: true, log: true, format: money, ramp: ['#eaf5e4', '#74c476', '#00441b'] },
+  { id: 'ethnicity',  label: 'Largest ethnic group', value: r => [...r.ethAll].sort((a, b) => b.pop - a.pop)[0]?.name, colorOf: n => ethColor(n) },
+  { id: 'government', label: 'Government', value: r => r.attrs.government, colors: { Republic: '#3d85c6', Monarchy: '#e0b13d' } },
+  { id: 'ideology',   label: 'Ideology',   value: r => r.attrs.ideology },
+  // Religion: write data-religion="Christianity" (or "Christianity, Islam") in a sidebar. Pick a religion in the second dropdown.
+  { id: 'religion',   label: 'Religion',
+    sub: () => [...religions].sort(),
+    value: (r, rel) => !r.religions.length ? null : (r.religions.includes(rel) ? 'above' : 'below'),
+    colorOf: c => c === 'above' ? religionColor(curSub) : '#e3e3e3',
+    hide: ['below'], nodata: '#e3e3e3', nodataLabel: 'Not a main religion',
+    catLabel: () => '1,000,000+ followers' },
+  // Factions: write data-faction="league" (the id of the faction's sidebar) in a country's sidebar.
+  // Clicking a country in this mode opens the faction's sidebar. The faction's color is its data-highlight (or automatic).
+  { id: 'faction',    label: 'Faction', value: r => r.attrs.faction, colorOf: id => factionColor(id), catLabel: id => data.get(id)?.name || id,
+    clickOpen: r => { const f = r.attrs.faction || data.get(r.parent)?.attrs.faction; return f && data.has(f) ? f : null; } },
+];
+
+const GAP_SEARCH_RADIUS = 2;   // px: how far to look when you click on a transparent 1px border
+const MAX_ZOOM = 24, MOBILE = "(max-width:800px)";
+
+/* =====================  HELPERS / STATE  ===================== */
+const $ = id => document.getElementById(id);
+const h = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; };
+const fmt = n => Math.round(n).toLocaleString('en-US');
+function money(n) {
+  const a = Math.abs(n);
+  return '$' + (a >= 1e12 ? (n / 1e12).toFixed(2) + ' T' : a >= 1e9 ? (n / 1e9).toFixed(2) + ' B' : a >= 1e6 ? (n / 1e6).toFixed(1) + ' M' : fmt(n));
+}
+const cssHex = s => s ? (String(s).startsWith('#') ? s : '#' + s) : null;
+const toInt = s => parseInt(String(s).replace('#', ''), 16);
+const hexOf = k => k.toString(16).padStart(6, '0');
+const hexToRgb = s => [1, 3, 5].map(i => parseInt(s.replace('#', '').padStart(6, '0').slice(i - 1, i + 1), 16));
+const hashHue = s => [...String(s)].reduce((a, c) => (a * 31 + c.charCodeAt(0)) >>> 0, 7) % 360;
+const autoColor = s => hsl2hex(hashHue(s), 55, 55);
+const ethColor = n => ETHNICITY_COLORS[n] || autoColor(n);
+const religionColor = n => RELIGION_COLORS[n] || autoColor(n || '');
+const factionColor = id => { const f = data.get(id); return f && f.hasHighlight ? f.highlight : autoColor(id); };
+
+const viewport = $('viewport'), world = $('world'), fillC = $('fill'), hlC = $('highlight'), hovC = $('hover');
+const fillCtx = fillC.getContext('2d', { willReadFrequently: true }), hlCtx = hlC.getContext('2d'), hovCtx = hovC.getContext('2d');
+let W = 0, H = 0, px = null, worldPop = 0, current = null;
+const data = new Map();         // sidebar id -> record
+const colorOwner = new Map();   // color int -> sidebar id
+const religions = new Set();    // religion names, filled from data-religion in the articles
+const stats = new Map();        // color int -> bounding box on the map
+
+/* =====================  SIDEBAR DOCUMENTS  ===================== */
+async function loadSidebars() {
+  await Promise.all(SIDEBARS.map(async id => {
+    try {
+      const res = await fetch(SIDEBAR_DIR + id + ".html");
+      if (!res.ok) throw new Error(res.status);
+      const doc = new DOMParser().parseFromString(await res.text(), 'text/html');
+      const root = doc.querySelector('[data-type]') || doc.body, d = root.dataset;
+      const rec = {
+        id, root, type: d.type || 'entity', name: d.name || id, parent: d.parent || null,
+        colors: (d.color || '').split(/[\s,]+/).filter(Boolean).map(toInt),
+        highlight: d.highlight || '#ffffff', hasHighlight: !!d.highlight, list: d.list,
+        flag: doc.getElementById('flag')?.getAttribute('src') || null,
+        pop: +d.population || 0, gdp: +d.gdp || 0, attrs: Object.assign({}, d),
+      };
+      rec.eth = [...root.querySelectorAll('.ethnicities li')].map(li => ({
+        name: li.textContent.trim(),
+        pop: li.dataset.pop ? +li.dataset.pop : (+li.dataset.pct || 0) / 100 * rec.pop,
+      }));
+      if (!rec.pop) rec.pop = rec.eth.reduce((s, e) => s + e.pop, 0);
+      rec.religions = (d.religion || '').split(',').map(s => s.trim()).filter(Boolean);
+      rec.religions.forEach(r => religions.add(r));
+      data.set(id, rec);
+    } catch (err) { console.warn("Could not load sidebar", id, err); }
+  }));
+  for (const r of data.values()) for (const c of r.colors) colorOwner.set(c, r.id);
+  // Regions are separate territories outside their overlord's own numbers, so their
+  // population, GDP and ethnic groups are ADDED to the overlord's totals.
+  for (const r of data.values()) {
+    const regs = childrenOf(r.id).filter(c => c.type === 'region');
+    r.total = r.pop + regs.reduce((s, c) => s + c.pop, 0);
+    r.gdpTotal = r.gdp + regs.reduce((s, c) => s + c.gdp, 0);
+    const m = new Map();
+    for (const e of [...r.eth, ...regs.flatMap(c => c.eth)]) m.set(e.name, (m.get(e.name) || 0) + e.pop);
+    r.ethAll = [...m].map(([name, pop]) => ({ name, pop }));
+  }
+  buildPanel();
+}
+
+const childrenOf = id => [...data.values()].filter(r => r.parent === id);
+const memberColors = r => [...r.colors, ...childrenOf(r.id).flatMap(c => c.colors)];
+
+function addFlag(a, id) {
+  const src = data.get(id)?.flag;
+  if (!src) return;
+  const f = new Image(); f.className = 'flag'; f.alt = '';
+  f.onerror = () => f.remove();
+  f.src = src; a.append(f);
+}
+
+/* ---------- pie chart (colors come from ETHNICITY_COLORS above) ---------- */
+const NS = 'http://www.w3.org/2000/svg';
+function pie(items, max = 0) {
+  items = items.filter(i => i.pop > 0).sort((a, b) => b.pop - a.pop);
+  if (max && items.length > max) {
+    const rest = items.slice(max).reduce((s, i) => s + i.pop, 0);
+    items = [...items.slice(0, max), { name: 'Other', pop: rest, color: '#5b6b79' }];
+  }
+  const total = items.reduce((s, i) => s + i.pop, 0), wrap = h('div', 'pie');
+  if (!total) { wrap.append(h('p', 'muted', 'No population data.')); return wrap; }
+  const svg = document.createElementNS(NS, 'svg'); svg.setAttribute('viewBox', '-1.02 -1.02 2.04 2.04');
+  let a = -Math.PI / 2;
+  items.forEach(it => {
+    it.color = it.color || ethColor(it.name);
+    const f = it.pop / total, b = a + f * 2 * Math.PI;
+    const el = document.createElementNS(NS, f > .9999 ? 'circle' : 'path');
+    if (f > .9999) el.setAttribute('r', '1');
+    else el.setAttribute('d', `M0 0L${Math.cos(a)} ${Math.sin(a)}A1 1 0 ${f > .5 ? 1 : 0} 1 ${Math.cos(b)} ${Math.sin(b)}Z`);
+    el.setAttribute('fill', it.color); el.setAttribute('stroke', '#1a232c'); el.setAttribute('stroke-width', '.012');
+    const t = document.createElementNS(NS, 'title'); t.textContent = `${it.name}: ${(f * 100).toFixed(1)}%`; el.append(t);
+    svg.append(el); a = b;
+  });
+  wrap.append(svg);
+  const ul = h('ul', 'legend');
+  items.forEach(it => {
+    const li = h('li'), sw = h('i'); sw.style.background = it.color;
+    li.append(sw, h('span', null, it.name), h('b', null, (it.pop / total * 100).toFixed(1) + '%'));
+    ul.append(li);
+  });
+  wrap.append(ul);
+  return wrap;
+}
+
+/* ---------- right panel: world total, world ethnicities, country list ---------- */
+function buildPanel() {
+  const countries = [...data.values()].filter(r => r.type === 'country');
+  worldPop = countries.reduce((s, r) => s + r.total, 0);
+  $('w-pop').textContent = fmt(worldPop);
+  $('barText').textContent = 'World · ' + fmt(worldPop);
+  const agg = new Map();
+  for (const c of countries) for (const e of c.ethAll) {
+    const a = agg.get(e.name) || { name: e.name, pop: 0 };
+    a.pop += e.pop; agg.set(e.name, a);
+  }
+  $('w-pie').replaceChildren(pie([...agg.values()], 8));
+  const list = [...data.values()]
+    .filter(r => r.list === 'false' ? false : (r.type === 'country' || r.list === 'true'))
+    .sort((a, b) => a.name.localeCompare(b.name));
+  $('w-list').replaceChildren(...list.map(r => {
+    const li = h('li'), a = h('a', 'xlink', r.name); a.href = '#';
+    a.onclick = e => { e.preventDefault(); select(r.id); };
+    addFlag(a, r.id); li.append(a); return li;
+  }));
+  filterList();
+}
+function filterList() {
+  const t = $('search').value.trim().toLowerCase();
+  $('w-list').querySelectorAll('li').forEach(li => { li.hidden = !!t && !li.textContent.toLowerCase().includes(t); });
+}
+$('search').addEventListener('input', filterList);
+const setPanelClosed = c => { document.body.classList.toggle('panel-closed', c); saveState(); };
+$('panelClose').onclick = () => setPanelClosed(true);
+$('panelOpen').onclick = () => setPanelClosed(false);
+$('panelBar').onclick = () => {
+  const open = $('panel').classList.toggle('expanded');
+  $('panelBar').setAttribute('aria-expanded', open); $('barArrow').textContent = open ? '▼' : '▲';
+  saveState();
+};
+
+/* =====================  SELECTION  ===================== */
+function openSidebar() {
+  $('sidebar').classList.add('open'); $('s-body').parentElement.scrollTop = 0;
+  if (matchMedia(MOBILE).matches) { $('panel').classList.remove('expanded'); $('barArrow').textContent = '▲'; }
+}
+function markLabels(id) {
+  labelObjs.forEach(L => L.el.classList.toggle('sel', !!id && L.open === id));
+  queueLayout();
+}
+
+// Value for an automatic field: calculated (population, worldshare, gdp, religion) or read from the article's data-* attributes.
+function autoValue(r, key) {
+  if (key === 'population') return r.total ? fmt(r.total) : null;
+  if (key === 'worldshare') return r.total && worldPop ? (r.total / worldPop * 100).toFixed(2) + '%' : null;
+  if (key === 'gdp') return r.gdpTotal ? money(r.gdpTotal) : null;
+  if (key === 'religion') return r.religions.join(', ') || null;
+  return r.attrs[key] || null;
+}
+// Builds the table from INFOBOX. Goes into <dl data-infobox></dl> if the article has one; otherwise it is
+// inserted under the first <h1>, unless the article already has its own <dl> (then that one is left alone).
+function buildInfobox(body, r) {
+  const rows = INFOBOX.map(([label, key]) => [label, autoValue(r, key)]).filter(([, v]) => v);
+  let dl = body.querySelector('dl[data-infobox]');
+  if (!dl) {
+    if (body.querySelector('dl') || !rows.length) return;
+    dl = document.createElement('dl');
+    const first = body.querySelector('h1');
+    first ? first.after(dl) : body.prepend(dl);
+  }
+  dl.append(...rows.flatMap(([label, v]) => [h('dt', null, label), h('dd', null, v)]));
+}
+
+function select(id, { fly = true } = {}) {
+  const r = data.get(id); if (!r) return;
+  current = id;
+  const body = $('s-body'); body.innerHTML = r.root.innerHTML;
+  body.querySelectorAll('[data-auto]').forEach(e => e.textContent = autoValue(r, e.dataset.auto) ?? '–');   // old style still works
+  buildInfobox(body, r);
+  body.querySelectorAll('.ethnicities').forEach(e => e.replaceWith(pie(r.ethAll)));
+  body.querySelectorAll('.religions').forEach(e => e.remove());   // old religion lists are ignored now (use data-religion)
+  body.querySelectorAll('a[data-link]').forEach(a => {
+    const t = a.dataset.link; a.classList.add('xlink'); a.href = '#';
+    if (!data.has(t)) a.classList.add('dead');
+    a.onclick = e => { e.preventDefault(); select(t); };
+    addFlag(a, t);
+  });
+  openSidebar();
+  drawHighlight(r);
+  markLabels(id);
+  if (fly) { const b = boundsOf(r); if (b) flyTo(b); }
+  saveState();
+}
+function showUnassigned(k) {
+  current = null;
+  $('s-body').replaceChildren(h('h1', null, 'Unassigned territory'),
+    h('p', 'muted', `Color #${hexOf(k)} has no sidebar yet. Create ${SIDEBAR_DIR}<id>.html with data-color="${hexOf(k)}" and add its id to SIDEBARS.`));
+  openSidebar(); hlCtx.clearRect(0, 0, W, H); markLabels(null); saveState();
+}
+function closeSidebar() { $('sidebar').classList.remove('open'); hlCtx.clearRect(0, 0, W, H); current = null; markLabels(null); saveState(); }
+$('close').onclick = closeSidebar;
+
+function drawHighlight(r) {
+  hlCtx.clearRect(0, 0, W, H);
+  const g = (r.type === 'region' && data.get(r.parent)) || r;
+  const members = new Set(memberColors(g)), solid = new Set(r.type === 'region' ? r.colors : []);
+  if (!members.size && !solid.size) return;
+  const [hr, hg, hb] = hexToRgb(g.highlight);
+  const out = hlCtx.createImageData(W, H), o = out.data;
+  for (let i = 0; i < px.length; i += 4) {
+    if (px[i + 3] < 200) continue;
+    const k = (px[i] << 16) | (px[i + 1] << 8) | px[i + 2];
+    if (solid.has(k)) { o[i] = o[i + 1] = o[i + 2] = 255; o[i + 3] = 255; }
+    else if (members.has(k)) { o[i] = hr; o[i + 1] = hg; o[i + 2] = hb; o[i + 3] = 90; }
+  }
+  hlCtx.putImageData(out, 0, 0);
+}
+
+function boundsOf(r) {
+  let b = null;
+  for (const c of memberColors(r)) {
+    const s = stats.get(c); if (!s) continue;
+    b = b ? { x0: Math.min(b.x0, s.x0), y0: Math.min(b.y0, s.y0), x1: Math.max(b.x1, s.x1), y1: Math.max(b.y1, s.y1) } : { ...s };
+  }
+  if (b) return b;
+  const L = labelObjs.find(l => l.open === r.id);          // territory-less entity: fly to its label
+  return L ? { x0: L.x - 60, y0: L.y - 40, x1: L.x + 60, y1: L.y + 40 } : null;
+}
+
+/* =====================  LOOKUP (handles 1px transparent borders)  ===================== */
+function colorAt(x, y) {
+  if (x < 0 || y < 0 || x >= W || y >= H) return null;
+  const i = (y * W + x) * 4;
+  return px[i + 3] > 200 ? (px[i] << 16) | (px[i + 1] << 8) | px[i + 2] : null;
+}
+function lookup(x, y) {
+  let k = colorAt(x, y);
+  for (let r = 1; k == null && r <= GAP_SEARCH_RADIUS; r++) {
+    let best = null, bd = 1e9;
+    for (let dy = -r; dy <= r; dy++) for (let dx = -r; dx <= r; dx++) {
+      const c = colorAt(x + dx, y + dy);
+      if (c != null && dx * dx + dy * dy < bd) { bd = dx * dx + dy * dy; best = c; }
+    }
+    k = best;
+  }
+  return k;
+}
+
+/* =====================  LABELS  ===================== */
+$('labels').replaceChildren();   // safety: never keep labels that were saved into the HTML
+const labelObjs = LABELS.map(L => {
+  const el = h('div', 'label' + (L.open ? ' link' : ''), L.text);
+  if (L.open) el.dataset.open = L.open;
+  if (L.size) el.style.fontSize = `calc(var(--label-size) * ${L.size})`;
+  $('labels').append(el); return { ...L, el };
+}).sort((a, b) => (b.prio || 0) - (a.prio || 0));
+
+// Declutter: selected labels and labels with prio >= NUDGE_PRIO may be nudged/wrapped to find room.
+// Lower-priority labels stay put or disappear: they are hidden if they collide, or if CROWD_MAX or more
+// already-placed labels sit within CROWD_RADIUS screen px of them. Zooming in thins the crowd and brings them back.
+const NUDGE_PRIO = 3, CROWD_RADIUS = 140, CROWD_MAX = 3;
+function layoutLabels() {
+  const order = [...labelObjs].sort((a, b) => b.el.classList.contains('sel') - a.el.classList.contains('sel'));
+  const placed = [], pad = 3;
+  for (const L of order) {
+    const ax = L.x * scale, ay = L.y * scale, strong = L.el.classList.contains('sel') || (L.prio || 0) >= NUDGE_PRIO;
+    if (!strong && placed.filter(p => Math.hypot(p.ax - ax, p.ay - ay) < CROWD_RADIUS).length >= CROWD_MAX) { L.el.classList.add('hide'); continue; }
+    let spot = null;
+    for (const mw of strong ? [160, 72] : [160]) {
+      L.el.style.maxWidth = mw + 'px';
+      const w = L.el.offsetWidth, hh = L.el.offsetHeight;
+      for (const [dx, dy] of strong ? [[0, 0], [0, -hh], [0, hh], [w * .8, 0], [-w * .8, 0]] : [[0, 0]]) {
+        const r = { x: ax + dx - w / 2, y: ay + dy - hh / 2, w, h: hh, ax, ay };
+        if (!placed.some(p => r.x < p.x + p.w + pad && r.x + r.w + pad > p.x && r.y < p.y + p.h + pad && r.y + r.h + pad > p.y)) { spot = r; break; }
+      }
+      if (spot) break;
+    }
+    if (spot) { placed.push(spot); L.el.style.transform = `translate(${spot.x}px,${spot.y}px)`; L.el.classList.remove('hide'); }
+    else L.el.classList.add('hide');
+  }
+}
+let lq = 0;
+const queueLayout = () => { if (!lq) lq = requestAnimationFrame(() => { lq = 0; layoutLabels(); }); };
+
+/* =====================  ZOOM / PAN / FLY  ===================== */
+let scale = 1, tx = 0, ty = 0, minScale = 1, lastScale = 0, anim = 0;
+
+// Persist the view and UI between refreshes.
+const MAP_STATE_KEY = 'worldMapState';
+let saveStateTimer = 0, stateReady = false;
+function saveState() {
+  if (!stateReady) return;
+  clearTimeout(saveStateTimer);
+  saveStateTimer = setTimeout(() => {
+    try {
+      localStorage.setItem(MAP_STATE_KEY, JSON.stringify({
+        scale, tx, ty, current,
+        sidebarOpen: $('sidebar').classList.contains('open'),
+        panelExpanded: $('panel').classList.contains('expanded'),
+        mode: curMode?.id || 'political', sub: curSub,
+        panelClosed: document.body.classList.contains('panel-closed')
+      }));
+    } catch (err) { console.warn('Could not save map state', err); }
+  }, 120);
+}
+function readSavedState() {
+  try { return JSON.parse(localStorage.getItem(MAP_STATE_KEY) || 'null'); }
+  catch { return null; }
+}
+function restoreSavedState() {
+  const saved = readSavedState();
+  stateReady = true;
+  if (!saved) return;
+
+  // Restore the selected sidebar first; do not let selection auto-zoom the map.
+  if (saved.sidebarOpen && saved.current && data.has(saved.current)) {
+    select(saved.current, { fly: false });
+  } else {
+    closeSidebar();
+  }
+
+  document.body.classList.toggle('panel-closed', !!saved.panelClosed);
+  if (typeof saved.sub === 'string') curSub = saved.sub;
+  $('panel').classList.toggle('expanded', !!saved.panelExpanded);
+  $('panelBar').setAttribute('aria-expanded', String(!!saved.panelExpanded));
+  $('barArrow').textContent = saved.panelExpanded ? '▼' : '▲';
+
+  if (MODES.some(m => m.id === saved.mode)) {
+    $('modeSel').value = saved.mode;
+    applyMode(saved.mode);
+  }
+
+  if (Number.isFinite(saved.scale) && Number.isFinite(saved.tx) && Number.isFinite(saved.ty)) {
+    scale = clampScale(saved.scale);
+    tx = saved.tx;
+    ty = saved.ty;
+    apply();
+  }
+  saveState();
+}
+function clamp() {
+  tx = Math.min(0, Math.max(innerWidth - W * scale, tx));
+  ty = Math.min(0, Math.max(innerHeight - H * scale, ty));
+}
+function apply() {
+  clamp();
+  world.style.transform = `translate(${tx}px,${ty}px) scale(${scale})`;
+  $('labels').style.transform = `translate(${tx}px,${ty}px)`;
+  if (scale !== lastScale) { lastScale = scale; queueLayout(); }   // panning never changes label collisions
+  saveState();
+}
+function fitToScreen() {
+  minScale = Math.max(innerWidth / W, innerHeight / H);
+  scale = minScale; tx = (innerWidth - W * scale) / 2; ty = (innerHeight - H * scale) / 2; apply();
+}
+const clampScale = s => Math.min(MAX_ZOOM, Math.max(minScale, s));
+
+function avail() {            // the part of the screen not covered by panels
+  const sb = $('sidebar'), pn = $('panel'), open = sb.classList.contains('open');
+  if (matchMedia(MOBILE).matches) return { x: 0, y: 0, w: innerWidth, h: innerHeight - pn.offsetHeight - (open ? sb.offsetHeight : 0) };
+  const l = open ? sb.offsetWidth : 0, pw = document.body.classList.contains('panel-closed') ? 0 : pn.offsetWidth;
+  return { x: l, y: 0, w: innerWidth - l - pw, h: innerHeight };
+}
+function flyTo(b) {
+  const a = avail(), bw = Math.max(b.x1 - b.x0 + 1, 40), bh = Math.max(b.y1 - b.y0 + 1, 40);
+  const ns = clampScale(Math.min(a.w * .7 / bw, a.h * .7 / bh));
+  const cx = (b.x0 + b.x1) / 2, cy = (b.y0 + b.y1) / 2;
+  animateTo(ns, a.x + a.w / 2 - cx * ns, a.y + a.h / 2 - cy * ns);
+}
+function animateTo(ns, ntx, nty) {
+  cancelAnimationFrame(anim);
+  const s0 = scale, x0 = tx, y0 = ty, t0 = performance.now(), D = 600;
+  const step = t => {
+    const k = Math.min(1, (t - t0) / D), e = 1 - Math.pow(1 - k, 3);
+    scale = s0 * Math.pow(ns / s0, e); tx = x0 + (ntx - x0) * e; ty = y0 + (nty - y0) * e; apply();
+    if (k < 1) anim = requestAnimationFrame(step);
+  };
+  anim = requestAnimationFrame(step);
+}
+
+viewport.addEventListener('wheel', e => {
+  e.preventDefault(); cancelAnimationFrame(anim);
+  const ns = clampScale(scale * Math.exp(-e.deltaY * 0.0015));
+  tx = e.clientX - (e.clientX - tx) * ns / scale; ty = e.clientY - (e.clientY - ty) * ns / scale;
+  scale = ns; apply(); hoverAt(e.clientX, e.clientY);
+}, { passive: false });
+
+const ptrs = new Map(); let drag = null, pinch = null;
+const pinchState = () => {
+  const [p, q] = [...ptrs.values()];
+  return { d: Math.hypot(p.x - q.x, p.y - q.y) || 1, mx: (p.x + q.x) / 2, my: (p.y + q.y) / 2, scale, tx, ty };
+};
+viewport.addEventListener('pointerdown', e => {
+  if (e.pointerType === 'mouse' && e.button !== 0) return;      // right/middle mouse buttons are handled separately
+  cancelAnimationFrame(anim); viewport.setPointerCapture(e.pointerId);
+  ptrs.set(e.pointerId, { x: e.clientX, y: e.clientY });
+  if (ptrs.size === 1) drag = { x: e.clientX, y: e.clientY, tx, ty, moved: false };
+  else if (ptrs.size === 2) { drag = null; pinch = pinchState(); }
+});
+viewport.addEventListener('pointermove', e => {
+  if (ptrs.has(e.pointerId)) ptrs.set(e.pointerId, { x: e.clientX, y: e.clientY });
+  if (e.pointerType !== 'touch') { showCoords(e); if (!(drag && drag.moved)) hoverAt(e.clientX, e.clientY); }
+  if (pinch && ptrs.size >= 2) {
+    const [p, q] = [...ptrs.values()], mx = (p.x + q.x) / 2, my = (p.y + q.y) / 2;
+    const ns = clampScale(pinch.scale * Math.hypot(p.x - q.x, p.y - q.y) / pinch.d);
+    tx = mx - (pinch.mx - pinch.tx) / pinch.scale * ns; ty = my - (pinch.my - pinch.ty) / pinch.scale * ns;
+    scale = ns; apply(); return;
+  }
+  if (!drag) return;
+  const dx = e.clientX - drag.x, dy = e.clientY - drag.y;
+  if (Math.abs(dx) + Math.abs(dy) > 4) { drag.moved = true; viewport.classList.add('dragging'); clearHover(); }
+  if (drag.moved) { tx = drag.tx + dx; ty = drag.ty + dy; apply(); }
+});
+viewport.addEventListener('pointercancel', e => { ptrs.delete(e.pointerId); drag = pinch = null; viewport.classList.remove('dragging'); });
+viewport.addEventListener('pointerup', e => {
+  ptrs.delete(e.pointerId);
+  if (pinch) { if (ptrs.size < 2) { pinch = null; drag = null; } return; }
+  const d = drag; drag = null; viewport.classList.remove('dragging');
+  if (!d || d.moved || !px) return;
+  openAt(e, false);                                             // LEFT click: the region itself
+});
+// RIGHT click (or long-press on a phone): the overlord of the region
+viewport.addEventListener('contextmenu', e => {
+  e.preventDefault(); drag = null; viewport.classList.remove('dragging');
+  if (px) openAt(e, true);
+});
+
+function openAt(e, overlord) {
+  const lab = document.elementFromPoint(e.clientX, e.clientY)?.closest('.label[data-open]');
+  if (lab) { select(lab.dataset.open); return; }
+  const k = lookup(Math.floor((e.clientX - tx) / scale), Math.floor((e.clientY - ty) / scale));
+  if (k == null) return;
+  const id = colorOwner.get(k);
+  if (!id) { showUnassigned(k); return; }
+  const r = data.get(id);
+  if (overlord) { select((r.parent && data.has(r.parent) ? r.parent : id), { fly: false }); return; }
+  const target = curMode.clickOpen?.(r);                        // e.g. Faction mode: open the faction's sidebar
+  select(target || id, { fly: false });
+}
+
+/* ---------- hover: the shape under the mouse gets slightly darker ---------- */
+let hoverK = null;
+function clearHover() { if (hoverK != null) { hoverK = null; hovCtx.clearRect(0, 0, W, H); } }
+function hoverAt(cx, cy) {
+  if (!px) return;
+  const k = lookup(Math.floor((cx - tx) / scale), Math.floor((cy - ty) / scale));
+  if (k === hoverK) return;
+  clearHover(); hoverK = k;
+  const s = k != null && stats.get(k); if (!s) return;
+  const bw = s.x1 - s.x0 + 1, bh = s.y1 - s.y0 + 1, out = hovCtx.createImageData(bw, bh), o = out.data, a = Math.round(HOVER_DARKEN * 255);
+  for (let y = s.y0; y <= s.y1; y++) for (let x = s.x0; x <= s.x1; x++) {
+    const i = (y * W + x) * 4;
+    if (px[i + 3] > 200 && ((px[i] << 16) | (px[i + 1] << 8) | px[i + 2]) === k) o[((y - s.y0) * bw + x - s.x0) * 4 + 3] = a;
+  }
+  hovCtx.putImageData(out, s.x0, s.y0);
+}
+
+/* ---------- x/y readout next to the cursor; hidden over the sidebars ---------- */
+const coords = $('coords');
+function showCoords(e) {
+  const x = Math.floor((e.clientX - tx) / scale), y = Math.floor((e.clientY - ty) / scale);
+  if (x < 0 || y < 0 || x >= W || y >= H) { coords.hidden = true; return; }
+  coords.hidden = false; coords.textContent = `x ${x}, y ${y}`;
+  coords.style.transform = `translate(${e.clientX + 14}px,${e.clientY + 14}px)`;
+}
+viewport.addEventListener('pointerleave', () => { coords.hidden = true; clearHover(); });   // fires when moving onto a panel
+
+addEventListener('resize', () => { minScale = Math.max(innerWidth / W, innerHeight / H); scale = clampScale(scale); apply(); queueLayout(); });
+addEventListener('keydown', e => {
+  if (e.target.matches('input, select')) return;     // don't react while typing in the search bar
+  if (e.key === 'Escape') closeSidebar();
+  if (e.key.toLowerCase() === 'd' && px) {          // helper: list every color in the fill map
+    const counts = new Map();
+    for (let i = 0; i < px.length; i += 4) {
+      if (px[i + 3] < 200) continue;
+      const k = (px[i] << 16) | (px[i + 1] << 8) | px[i + 2]; counts.set(k, (counts.get(k) || 0) + 1);
+    }
+    console.table([...counts].sort((a, b) => b[1] - a[1]).map(([k, n]) => ({ hex: hexOf(k), pixels: n })));
+  }
+});
+
+/* =====================  MAP MODES  ===================== */
+const NODATA = [92, 104, 116];
+let curMode = MODES[0], curSub = null;   // curSub = the chosen option of a mode with a second dropdown (e.g. the religion)
+const mix = (a, b, t) => a.map((v, i) => v + (b[i] - v) * t);
+function rampAt(stops, t) {
+  const n = stops.length - 1, p = Math.min(Math.max(t, 0), 1) * n, i = Math.min(Math.floor(p), n - 1);
+  return mix(stops[i], stops[i + 1], p - i);
+}
+function hsl2hex(hh, s, l) {
+  s /= 100; l /= 100; const a = s * Math.min(l, 1 - l);
+  const f = n => { const k = (n + hh / 30) % 12; return Math.round(255 * (l - a * Math.max(-1, Math.min(k - 3, 9 - k, 1)))); };
+  return '#' + [f(0), f(8), f(4)].map(x => x.toString(16).padStart(2, '0')).join('');
+}
+const valueOf = (m, r) => {
+  let v = m.value(r, curSub);
+  if ((v == null || v === '') && r.parent && data.get(r.parent)) v = m.value(data.get(r.parent), curSub);
+  return v;
+};
+
+function applyMode(id) {
+  const m = curMode = MODES.find(x => x.id === id) || MODES[0], legend = $('legend'), subSel = $('subSel');
+  legend.replaceChildren(); fillCtx.clearRect(0, 0, W, H);
+  if (m.sub) {                                                       // modes with a second dropdown (religion)
+    const opts = m.sub();
+    if (!opts.includes(curSub)) curSub = opts[0] ?? null;
+    subSel.replaceChildren(...opts.map(o => { const e = h('option', null, o); e.value = o; return e; }));
+    if (curSub != null) subSel.value = curSub;
+    subSel.hidden = false;
+  } else subSel.hidden = true;
+  if (!m.value) { fillCtx.drawImage(img, 0, 0); return; }          // political = the original fill image
+  const nd = m.nodata ? hexToRgb(m.nodata) : NODATA;
+  const vals = new Map();                                           // color int -> value (null = no data)
+  for (const [k, sid] of colorOwner) {
+    const v = valueOf(m, data.get(sid));
+    vals.set(k, m.numeric ? (v == null || isNaN(+v) || (m.log && +v <= 0) ? null : +v) : (v == null || v === '' ? null : String(v)));
+  }
+  const lut = new Map(), present = [...vals.values()].filter(v => v != null);
+  if (m.numeric) {
+    const f = m.log ? Math.log : x => x, nums = present.map(f), lo = Math.min(...nums), hi = Math.max(...nums);
+    const stops = (m.ramp || ['#e8f1f8', '#08306b']).map(hexToRgb);
+    for (const [k, v] of vals) lut.set(k, v == null ? nd : rampAt(stops, hi > lo ? (f(v) - lo) / (hi - lo) : .5));
+    if (present.length) {
+      const bar = h('div', 'lg-bar'), row = h('div', 'lg-row'), fm = m.format || fmt;
+      bar.style.background = `linear-gradient(90deg,${stops.map(c => `rgb(${c.map(Math.round)})`).join(',')})`;
+      row.append(h('span', null, fm(Math.min(...present))), h('span', null, fm(Math.max(...present))));
+      legend.append(bar, row);
+    }
+  } else {
+    const cats = [...new Set(present)].sort(), hexes = new Map(cats.map((c, i) => [c, m.colors?.[c] || m.colorOf?.(c) || hsl2hex(i * 47 % 360, 55, 55)]));
+    for (const [k, v] of vals) lut.set(k, v == null ? nd : hexToRgb(hexes.get(v)));
+    const row = (c, name) => { const d = h('div', 'lg-cat'), i = h('i'); i.style.background = c; d.append(i, h('span', null, name)); legend.append(d); };
+    const shown = cats.filter(c => !m.hide?.includes(c));           // m.hide: categories left out of the legend
+    shown.slice(0, 10).forEach(c => row(hexes.get(c), m.catLabel ? m.catLabel(c) : c));
+    if (shown.length > 10) legend.append(h('div', 'muted', `+${shown.length - 10} more`));
+  }
+  if (vals.size && (present.length < vals.size || m.hide)) { const d = h('div', 'lg-cat'), i = h('i'); i.style.background = `rgb(${nd})`; d.append(i, h('span', 'muted', m.nodataLabel || 'No data')); legend.append(d); }
+  const out = fillCtx.createImageData(W, H), o = out.data; let lastK = -1, c = nd;
+  for (let i = 0; i < px.length; i += 4) {                          // px stays untouched: it is the color-to-owner lookup
+    const a = px[i + 3]; if (!a) continue;
+    const k = (px[i] << 16) | (px[i + 1] << 8) | px[i + 2];
+    if (k !== lastK) { c = lut.get(k) || nd; lastK = k; }
+    o[i] = c[0]; o[i + 1] = c[1]; o[i + 2] = c[2]; o[i + 3] = a;
+  }
+  fillCtx.putImageData(out, 0, 0);
+}
+function initModes() {
+  const sel = $('modeSel');
+  if (MODES.length < 2) { $('modes').hidden = true; return; }
+  sel.replaceChildren(...MODES.map(m => { const o = h('option', null, m.label); o.value = m.id; return o; }));
+  sel.onchange = () => { applyMode(sel.value); saveState(); sel.blur(); };
+  $('subSel').onchange = () => { curSub = $('subSel').value; applyMode(curMode.id); saveState(); $('subSel').blur(); };
+}
+
+/* =====================  BOOT  ===================== */
+const sidebarsReady = loadSidebars();
+const img = new Image();
+img.onload = async () => {
+  W = img.width; H = img.height;
+  for (const c of [fillC, hlC, hovC]) { c.width = W; c.height = H; }
+  $('borders').style.width = W + 'px';
+  fillCtx.imageSmoothingEnabled = false; fillCtx.drawImage(img, 0, 0);
+  try { px = fillCtx.getImageData(0, 0, W, H).data; }
+  catch (e) { $('status').textContent = "Canvas blocked: serve this folder with a local server (e.g. Live Server), not file://"; return; }
+  // one pass: bounding box of every color (used to fly the camera to a country/region)
+  let lastK = -1, s = null;
+  for (let i = 0, p = 0; i < px.length; i += 4, p++) {
+    if (px[i + 3] < 200) continue;
+    const k = (px[i] << 16) | (px[i + 1] << 8) | px[i + 2];
+    if (k !== lastK) { s = stats.get(k); if (!s) stats.set(k, s = { x0: 1e9, y0: 1e9, x1: -1, y1: -1 }); lastK = k; }
+    const x = p % W, y = (p / W) | 0;
+    if (x < s.x0) s.x0 = x; if (x > s.x1) s.x1 = x; if (y < s.y0) s.y0 = y; if (y > s.y1) s.y1 = y;
+  }
+  fitToScreen();
+  await sidebarsReady;
+  initModes();
+  restoreSavedState();
+  $('status').textContent = "Click a country · right-click for its overlord · scroll or pinch to zoom · drag to pan";
+};
+img.onerror = () => $('status').textContent = "Could not load " + FILL_SRC;
+img.src = FILL_SRC;
+</script>
+
+</body>
+</html>

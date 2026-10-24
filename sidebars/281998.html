@@ -1,0 +1,41 @@
+<!-- data-type="country": counted in world population, world ethnicity pie and the country list.
+     data-color accepts several colors (space or comma separated); the fly-to camera and the
+     highlight cover all of them plus every child region's colors. -->
+<article data-type="country"
+         data-name="Republic of China"
+         data-color="281998"
+         data-population="480000000"
+         data-highlight="#ffd54a"
+         data-capital="Nanjing"
+         data-government="Republic"
+         data-religion="Buddhism"
+         data-ideology="Nationalism">
+
+  <img id="flag" src="/map/graphics/flags/roc.png" alt="" style="height:32px">
+  <h1>Republic of China</h1>
+  <p class="region">East Asia</p>
+
+  <!-- Filled automatically from INFOBOX using the data-* attributes above.
+       Capital, Government, Ideology = attributes; Population, World share = calculated. -->
+  <dl data-infobox></dl>
+
+  <h3>Ethnic groups</h3>
+  <!-- Replaced by a pie chart. data-pct = % of this country, or data-pop = absolute number.
+       data-color is used on the map in "Largest ethnic group" mode (first article to define a name wins). -->
+  <ul class="ethnicities">
+    <li data-pct="91" data-color="#e07a5f">Han</li>
+    <li data-pct="5"  data-color="#3d85c6">Hui</li>
+    <li data-pct="3"  data-color="#81b29a">Tibetan</li>
+    <li data-pop="2400000" data-color="#f2cc8f">Others</li>
+  </ul>
+
+  <h3>Regions</h3>
+  <ul>
+    <li><a data-link="251a99">Sichuan</a></li>
+    <li><a data-link="281799">Shandong</a></li>
+  </ul>
+
+  <h3>Member of</h3>
+  <ul><li><a data-link="league">League of Nations</a></li></ul>
+
+</article>
